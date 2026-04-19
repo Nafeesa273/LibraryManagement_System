@@ -1,4 +1,4 @@
-# 📚 Advanced Library Management System 
+# 📚 Library Management System 
 
 ### **A Comprehensive Full-Stack Console Application**
 Developed as a robust solution for academic and public libraries, this system leverages **C#** and **Relational Database Management Systems (RDBMS)** to automate the entire lifecycle of book management, from inventory control to financial tracking of fines.
