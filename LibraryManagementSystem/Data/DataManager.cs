@@ -2,6 +2,7 @@
 using LibraryManagementSystem.Models;
 using System.Collections.Generic;
 using System;
+using System.Data;
 
 namespace LibraryManagementSystem.Data
 {
@@ -131,37 +132,65 @@ namespace LibraryManagementSystem.Data
             catch (Exception ex) { Console.WriteLine("Add Error: " + ex.Message); }
         }
 
-        public static void UpdateBookField(int id, string column, object newValue)
+        public static bool UpdateBookQuantity(int id, int change)
         {
             try
             {
                 using (var conn = new MySqlConnection(connString))
                 {
                     conn.Open();
-                    var query = $"UPDATE books SET {column} = @v WHERE id = @id";
+                    if (change < 0)
+                    {
+                        var checkCmd = new MySqlCommand("SELECT quantity FROM books WHERE id = @id", conn);
+                        checkCmd.Parameters.AddWithValue("@id", id);
+                        var res = checkCmd.ExecuteScalar();
+                        if (res == null || Convert.ToInt32(res) <= 0) return false;
+                    }
+                    var query = "UPDATE books SET quantity = quantity + @change WHERE id = @id";
                     var cmd = new MySqlCommand(query, conn);
-                    cmd.Parameters.AddWithValue("@v", newValue);
+                    cmd.Parameters.AddWithValue("@change", change);
                     cmd.Parameters.AddWithValue("@id", id);
                     cmd.ExecuteNonQuery();
+                    return true;
                 }
             }
-            catch (Exception ex) { Console.WriteLine("Update Error: " + ex.Message); }
+            catch { return false; }
         }
 
-        public static void DeleteBookFromDb(int id)
+        public static void RecordTransaction(string user, int bid, string action)
         {
             try
             {
                 using (var conn = new MySqlConnection(connString))
                 {
                     conn.Open();
-                    var query = "DELETE FROM books WHERE id = @id";
+                    string query = action == "Issue"
+                        ? "INSERT INTO issued_books (username, book_id, issue_date, status) VALUES (@u, @bid, NOW(), 'Issued')"
+                        : "UPDATE issued_books SET return_date = NOW(), status = 'Returned' WHERE username = @u AND book_id = @bid AND status = 'Issued' LIMIT 1";
                     var cmd = new MySqlCommand(query, conn);
-                    cmd.Parameters.AddWithValue("@id", id);
+                    cmd.Parameters.AddWithValue("@u", user);
+                    cmd.Parameters.AddWithValue("@bid", bid);
                     cmd.ExecuteNonQuery();
                 }
             }
-            catch (Exception ex) { Console.WriteLine("Delete Error: " + ex.Message); }
+            catch (Exception ex) { Console.WriteLine("Log Error: " + ex.Message); }
+        }
+
+        public static DataTable GetTransactionHistory()
+        {
+            var dt = new DataTable();
+            try
+            {
+                using (var conn = new MySqlConnection(connString))
+                {
+                    conn.Open();
+                    var cmd = new MySqlCommand("SELECT * FROM issued_books ORDER BY issue_date DESC", conn);
+                    using var adapter = new MySqlDataAdapter(cmd);
+                    adapter.Fill(dt);
+                }
+            }
+            catch { }
+            return dt;
         }
 
         public static List<Book> SearchBooks(string keyword)
@@ -172,7 +201,7 @@ namespace LibraryManagementSystem.Data
                 using (var conn = new MySqlConnection(connString))
                 {
                     conn.Open();
-                    var query = "SELECT * FROM books WHERE book_name LIKE @k OR author LIKE @k OR isbn LIKE @k";
+                    var query = "SELECT * FROM books WHERE book_name LIKE @k OR author LIKE @k";
                     var cmd = new MySqlCommand(query, conn);
                     cmd.Parameters.AddWithValue("@k", "%" + keyword + "%");
                     using var reader = cmd.ExecuteReader();
@@ -184,15 +213,44 @@ namespace LibraryManagementSystem.Data
                             Title = reader["book_name"]?.ToString() ?? "N/A",
                             Author = reader["author"]?.ToString() ?? "N/A",
                             Quantity = Convert.ToInt32(reader["quantity"]),
-                            ISBN = reader["isbn"]?.ToString() ?? "N/A",
-                            Category = reader["category"]?.ToString() ?? "General",
                             Price = reader["price"] != DBNull.Value ? Convert.ToInt32(reader["price"]) : 0
                         });
                     }
                 }
             }
-            catch (Exception ex) { Console.WriteLine("Search Error: " + ex.Message); }
+            catch { }
             return books;
+        }
+
+        public static void UpdateBookField(int id, string col, object val)
+        {
+            try
+            {
+                using (var conn = new MySqlConnection(connString))
+                {
+                    conn.Open();
+                    var cmd = new MySqlCommand($"UPDATE books SET {col} = @v WHERE id = @id", conn);
+                    cmd.Parameters.AddWithValue("@v", val);
+                    cmd.Parameters.AddWithValue("@id", id);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+            catch { }
+        }
+
+        public static void DeleteBookFromDb(int id)
+        {
+            try
+            {
+                using (var conn = new MySqlConnection(connString))
+                {
+                    conn.Open();
+                    var cmd = new MySqlCommand("DELETE FROM books WHERE id = @id", conn);
+                    cmd.Parameters.AddWithValue("@id", id);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+            catch { }
         }
     }
 }

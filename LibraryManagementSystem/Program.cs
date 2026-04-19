@@ -5,6 +5,7 @@ using System.Threading;
 using System.Linq;
 using System.Collections.Generic;
 using System;
+using System.Data;
 
 List<User> userList = new List<User>();
 User? loggedInUser = null;
@@ -51,22 +52,27 @@ while (true)
     {
         AnsiConsole.Write(new Panel(new Markup($"[bold white]USER:[/] [cyan]{loggedInUser.Username.ToUpper()}[/] | [bold white]ROLE:[/] [yellow]{loggedInUser.Role}[/]")).BorderColor(Color.Grey));
 
+        var tb = DataManager.GetTotalBooks();
         if (loggedInUser.Role == "Admin")
         {
-            var tb = DataManager.GetTotalBooks();
             var tu = DataManager.GetTotalUsers();
             AnsiConsole.Write(new Columns(
                 new Panel(Align.Center(new Markup($"[bold yellow]{tb}[/]\n[grey]TOTAL COPIES[/]"))).Header(new PanelHeader("Inventory")).BorderColor(Color.Green),
                 new Panel(Align.Center(new Markup($"[bold yellow]{tu}[/]\n[grey]USERS[/]"))).Header(new PanelHeader("Community")).BorderColor(Color.Cyan)
             ));
         }
+        else
+        {
+            AnsiConsole.Write(new Panel(new Markup($"[bold green]WELCOME, {loggedInUser.Username.ToUpper()}![/] Currently, we have [yellow]{tb}[/] books.")).BorderColor(Color.Blue));
+        }
 
-        var menuChoices = new List<string> { "View All Books", "Search Book" };
+        var menuChoices = new List<string> { "View All Books", "Search Book", "Issue a Book", "Return a Book" };
         if (loggedInUser.Role == "Admin")
         {
             menuChoices.Add("Update Book");
             menuChoices.Add("Add Book");
             menuChoices.Add("Delete Book");
+            menuChoices.Add("View Transaction History");
         }
         menuChoices.Add("Logout");
 
@@ -76,80 +82,90 @@ while (true)
         else if (action == "View All Books") ShowBooksTable(DataManager.LoadBooks());
         else if (action == "Search Book")
         {
-            var k = AnsiConsole.Ask<string>("Search Title, Author or ISBN:");
+            var k = AnsiConsole.Ask<string>("Search Title or Author:");
             ShowBooksTable(DataManager.SearchBooks(k));
+        }
+        else if (action == "Issue a Book")
+        {
+            var id = AnsiConsole.Ask<int>("[yellow]Enter Book ID to Issue:[/]");
+            bool success = DataManager.UpdateBookQuantity(id, -1);
+            if (success)
+            {
+                DataManager.RecordTransaction(loggedInUser.Username, id, "Issue");
+                AnsiConsole.Write(new Panel(new Markup("[bold green]✔ ISSUED SUCCESSFULLY![/]\n[white]Return within 7 days to avoid Rs. 100/day fine.[/]")).BorderColor(Color.Green));
+            }
+            else AnsiConsole.MarkupLine("[bold red]❌ Out of Stock![/]");
+            Thread.Sleep(2000);
+        }
+        else if (action == "Return a Book")
+        {
+            var id = AnsiConsole.Ask<int>("[yellow]Enter Book ID to Return:[/]");
+            DataTable dt = DataManager.GetTransactionHistory();
+            DataRow? transaction = dt.AsEnumerable()
+                .FirstOrDefault(r => r.Field<string>("username") == loggedInUser.Username
+                                && r.Field<int>("book_id") == id
+                                && r.Field<string>("status") == "Issued");
+
+            if (transaction != null)
+            {
+                DateTime issueDate = Convert.ToDateTime(transaction["issue_date"]);
+                DateTime returnDate = DateTime.Now;
+                int daysDiff = (returnDate - issueDate).Days;
+                int fine = (daysDiff > 7) ? (daysDiff - 7) * 100 : 0;
+
+                DataManager.UpdateBookQuantity(id, 1);
+                DataManager.RecordTransaction(loggedInUser.Username, id, "Return");
+
+                var summaryTable = new Table().Border(TableBorder.Rounded).BorderColor(Color.Cyan1);
+                summaryTable.AddColumn("[bold yellow]Detail[/]");
+                summaryTable.AddColumn("[bold yellow]Value[/]");
+                summaryTable.AddRow("Days Kept", daysDiff.ToString());
+                summaryTable.AddRow("Status", daysDiff > 7 ? "[red]LATE[/]" : "[green]ON TIME[/]");
+                summaryTable.AddRow("Fine (Rs. 100/day)", fine > 0 ? $"[bold red]Rs. {fine}[/]" : "[bold green]Rs. 0[/]");
+
+                AnsiConsole.Write(new Panel(summaryTable).Header("📊 RETURN SUMMARY").BorderColor(Color.Cyan1));
+                AnsiConsole.MarkupLine("\n[grey]Press any key...[/]"); Console.ReadKey();
+            }
+            else { AnsiConsole.MarkupLine("[bold red]❌ No active issuance found![/]"); Thread.Sleep(2000); }
+        }
+        else if (action == "View Transaction History" && loggedInUser.Role == "Admin")
+        {
+            DataTable history = DataManager.GetTransactionHistory();
+            var table = new Table().BorderColor(Color.Magenta1).Title("[bold yellow]📜 ISSUANCE LOGS[/]");
+            table.AddColumns("User", "Book ID", "Issue Date", "Return Date", "Status");
+            foreach (DataRow row in history.Rows)
+                table.AddRow(row["username"].ToString(), row["book_id"].ToString(), row["issue_date"].ToString(), row["return_date"]?.ToString() ?? "-", row["status"].ToString());
+
+            AnsiConsole.Write(table);
+            AnsiConsole.MarkupLine("\n[grey]Press any key...[/]"); Console.ReadKey();
         }
         else if (action == "Add Book" && loggedInUser.Role == "Admin")
         {
             var t = AnsiConsole.Ask<string>("Title:");
             var a = AnsiConsole.Ask<string>("Author:");
-            var i = AnsiConsole.Ask<string>("ISBN:");
-            var c = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Category:").AddChoices("Computer Science", "Mathematics", "Islamic", "Literature", "General"));
             var q = AnsiConsole.Ask<int>("Quantity:");
             var p = AnsiConsole.Ask<int>("Price:");
-            DataManager.AddBookToDb(new Book { Title = t, Author = a, Quantity = q, ISBN = i, Category = c, Price = p });
+            DataManager.AddBookToDb(new Book { Title = t, Author = a, Quantity = q, Price = p });
             AnsiConsole.MarkupLine("[bold green]✔ Added![/]"); Thread.Sleep(1000);
-        }
-        else if (action == "Update Book" && loggedInUser.Role == "Admin")
-        {
-            var id = AnsiConsole.Ask<int>("[yellow]Enter Book ID to Update:[/]");
-            var field = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("What would you like to update?").AddChoices("Title", "Author", "ISBN", "Category", "Quantity", "Price", "Back"));
-
-            if (field == "Title")
-            {
-                var val = AnsiConsole.Ask<string>("New Title:");
-                DataManager.UpdateBookField(id, "book_name", val);
-            }
-            else if (field == "Author")
-            {
-                var val = AnsiConsole.Ask<string>("New Author:");
-                DataManager.UpdateBookField(id, "author", val);
-            }
-            else if (field == "ISBN")
-            {
-                var val = AnsiConsole.Ask<string>("New ISBN:");
-                DataManager.UpdateBookField(id, "isbn", val);
-            }
-            else if (field == "Category")
-            {
-                var val = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Select Category:").AddChoices("Computer Science", "Mathematics", "Islamic", "Literature", "General"));
-                DataManager.UpdateBookField(id, "category", val);
-            }
-            else if (field == "Quantity")
-            {
-                var val = AnsiConsole.Ask<int>("New Quantity:");
-                DataManager.UpdateBookField(id, "quantity", val);
-            }
-            else if (field == "Price")
-            {
-                var val = AnsiConsole.Ask<int>("New Price:");
-                DataManager.UpdateBookField(id, "price", val);
-            }
-
-            if (field != "Back")
-            {
-                AnsiConsole.MarkupLine("[bold green]✔ Updated Successfully![/]");
-                Thread.Sleep(1000);
-            }
         }
         else if (action == "Delete Book" && loggedInUser.Role == "Admin")
         {
             var id = AnsiConsole.Ask<int>("ID to delete:");
-            if (AnsiConsole.Confirm("Delete this book?"))
-            {
-                DataManager.DeleteBookFromDb(id);
-                AnsiConsole.MarkupLine("[bold red]✔ Deleted![/]");
-            }
-            Thread.Sleep(1000);
+            DataManager.DeleteBookFromDb(id);
+            AnsiConsole.MarkupLine("[bold red]✔ Deleted![/]"); Thread.Sleep(1000);
         }
     }
 }
 
 void ShowBooksTable(List<Book> books)
 {
-    var table = new Table().BorderColor(Color.DeepSkyBlue1);
-    table.AddColumns("[yellow]ID[/]", "[yellow]Title[/]", "[yellow]Author[/]", "[yellow]ISBN[/]", "[yellow]Category[/]", "[yellow]Price[/]", "[yellow]Qty[/]");
-    foreach (var b in books) table.AddRow(b.Id.ToString(), b.Title, b.Author, b.ISBN ?? "N/A", b.Category ?? "Gen", b.Price.ToString("N0"), b.Quantity.ToString());
+    var table = new Table().Border(TableBorder.Rounded).BorderColor(Color.DeepSkyBlue1).Title("[bold yellow]📚 LIBRARY COLLECTION[/]");
+    table.AddColumns("[bold yellow]ID[/]", "[bold yellow]Title[/]", "[bold yellow]Author[/]", "[bold yellow]Price[/]", "[bold yellow]Status[/]");
+    foreach (var b in books)
+    {
+        string statusText = b.Quantity > 0 ? $"[green]Available ({b.Quantity})[/]" : "[red]Out of Stock[/]";
+        table.AddRow(b.Id.ToString(), b.Title, b.Author, b.Price.ToString("N0"), statusText);
+    }
     AnsiConsole.Write(table);
-    AnsiConsole.MarkupLine("\n[grey]Press any key...[/]"); Console.ReadKey();
+    AnsiConsole.MarkupLine("\n[grey]Press any key to return...[/]"); Console.ReadKey();
 }
