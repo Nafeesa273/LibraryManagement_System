@@ -13,9 +13,12 @@ User? loggedInUser = null;
 while (true)
 {
     AnsiConsole.Clear();
-    var headerText = new Text("WELCOME TO LIBRARY MANAGEMENT SYSTEM", new Style(Color.Yellow)).Centered();
+    // Yahan Header Text change kiya hy
+    var headerText = new Text("LIBRARY MANAGEMENT SYSTEM", new Style(Color.Yellow)).Centered();
     var header = new Panel(headerText);
-    header.Header = new PanelHeader("KICSIT LIBRARY DATABASE EDITION");
+
+    // KICSIT ki jagah LMS | DIGITAL EDITION set kar diya hy
+    header.Header = new PanelHeader("LMS | DIGITAL EDITION");
     header.Border = BoxBorder.Double;
     header.BorderColor(Color.DeepSkyBlue1);
     header.Expand = true;
@@ -43,7 +46,8 @@ while (true)
         }
         else if (choice == "About System")
         {
-            AnsiConsole.MarkupLine("[cyan]Developed by Nafeesa Haroon\nInstitute of Space Technology (KICSIT)[/]");
+            // Developed by Nafeesa Haroon (KICSIT reference kept in credits)
+            AnsiConsole.MarkupLine("[cyan]Developed by Nafeesa Haroon\nInstitute of Space Technology[/]");
             Console.ReadKey();
         }
         else break;
@@ -66,17 +70,25 @@ while (true)
             AnsiConsole.Write(new Panel(new Markup($"[bold green]WELCOME, {loggedInUser.Username.ToUpper()}![/] Currently, we have [yellow]{tb}[/] books.")).BorderColor(Color.Blue));
         }
 
-        var menuChoices = new List<string> { "View All Books", "Search Book", "Issue a Book", "Return a Book" };
+        // --- UPDATED MENU ARRANGEMENT ---
+        var menuChoices = new List<string> { "View All Books", "Search Book" };
+
         if (loggedInUser.Role == "Admin")
         {
-            menuChoices.Add("Update Book");
             menuChoices.Add("Add Book");
+            menuChoices.Add("Update Book");
             menuChoices.Add("Delete Book");
             menuChoices.Add("View Transaction History");
         }
+
+        menuChoices.Add("Issue a Book");
+        menuChoices.Add("Return a Book");
         menuChoices.Add("Logout");
 
-        var action = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Actions:").AddChoices(menuChoices));
+        var action = AnsiConsole.Prompt(new SelectionPrompt<string>()
+            .Title("Actions:")
+            .PageSize(10)
+            .AddChoices(menuChoices));
 
         if (action == "Logout") loggedInUser = null;
         else if (action == "View All Books") ShowBooksTable(DataManager.LoadBooks());
@@ -84,6 +96,29 @@ while (true)
         {
             var k = AnsiConsole.Ask<string>("Search Title or Author:");
             ShowBooksTable(DataManager.SearchBooks(k));
+        }
+        else if (action == "Add Book" && loggedInUser.Role == "Admin")
+        {
+            var t = AnsiConsole.Ask<string>("Title:");
+            var a = AnsiConsole.Ask<string>("Author:");
+            var q = AnsiConsole.Ask<int>("Quantity:");
+            var p = AnsiConsole.Ask<int>("Price:");
+            DataManager.AddBookToDb(new Book { Title = t, Author = a, Quantity = q, Price = p });
+            AnsiConsole.MarkupLine("[bold green]✔ Added![/]"); Thread.Sleep(1000);
+        }
+        else if (action == "Update Book" && loggedInUser.Role == "Admin")
+        {
+            var id = AnsiConsole.Ask<int>("Enter Book ID to update:");
+            var col = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Field:").AddChoices("book_name", "author", "quantity", "price"));
+            var val = AnsiConsole.Ask<string>($"New value for {col}:");
+            DataManager.UpdateBookField(id, col, val);
+            AnsiConsole.MarkupLine("[bold green]✔ Updated![/]"); Thread.Sleep(1000);
+        }
+        else if (action == "Delete Book" && loggedInUser.Role == "Admin")
+        {
+            var id = AnsiConsole.Ask<int>("ID to delete:");
+            DataManager.DeleteBookFromDb(id);
+            AnsiConsole.MarkupLine("[bold red]✔ Deleted![/]"); Thread.Sleep(1000);
         }
         else if (action == "Issue a Book")
         {
@@ -138,21 +173,6 @@ while (true)
 
             AnsiConsole.Write(table);
             AnsiConsole.MarkupLine("\n[grey]Press any key...[/]"); Console.ReadKey();
-        }
-        else if (action == "Add Book" && loggedInUser.Role == "Admin")
-        {
-            var t = AnsiConsole.Ask<string>("Title:");
-            var a = AnsiConsole.Ask<string>("Author:");
-            var q = AnsiConsole.Ask<int>("Quantity:");
-            var p = AnsiConsole.Ask<int>("Price:");
-            DataManager.AddBookToDb(new Book { Title = t, Author = a, Quantity = q, Price = p });
-            AnsiConsole.MarkupLine("[bold green]✔ Added![/]"); Thread.Sleep(1000);
-        }
-        else if (action == "Delete Book" && loggedInUser.Role == "Admin")
-        {
-            var id = AnsiConsole.Ask<int>("ID to delete:");
-            DataManager.DeleteBookFromDb(id);
-            AnsiConsole.MarkupLine("[bold red]✔ Deleted![/]"); Thread.Sleep(1000);
         }
     }
 }
