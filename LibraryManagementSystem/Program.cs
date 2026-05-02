@@ -7,17 +7,16 @@ using System.Collections.Generic;
 using System;
 using System.Data;
 
+// --- Global Variables ---
 List<User> userList = new List<User>();
 User? loggedInUser = null;
 
 while (true)
 {
     AnsiConsole.Clear();
-    // Yahan Header Text change kiya hy
-    var headerText = new Text("LIBRARY MANAGEMENT SYSTEM", new Style(Color.Yellow)).Centered();
-    var header = new Panel(headerText);
 
-    // KICSIT ki jagah LMS | DIGITAL EDITION set kar diya hy
+    // DECORATIVE HEADER
+    var header = new Panel(new Text("LIBRARY MANAGEMENT SYSTEM", new Style(Color.Yellow)).Centered());
     header.Header = new PanelHeader("LMS | DIGITAL EDITION");
     header.Border = BoxBorder.Double;
     header.BorderColor(Color.DeepSkyBlue1);
@@ -26,166 +25,231 @@ while (true)
 
     if (loggedInUser == null)
     {
-        var choice = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Please [bold cyan]Login[/] to access.").AddChoices("Login", "Register", "About System", "Exit"));
+        var choice = AnsiConsole.Prompt(
+          new SelectionPrompt<string>()
+          .Title("Please [bold cyan]Login[/] to access.")
+          .AddChoices("Login", "Register", "About System", "Exit"));
+
         if (choice == "Login")
         {
-            userList = DataManager.LoadUsers();
-            var name = AnsiConsole.Ask<string>("Username:");
+            userList = DataManager.LoadUsers(); // Refresh users from DB
+            var name = AnsiConsole.Ask<string>("Username:");
             var pass = AnsiConsole.Prompt(new TextPrompt<string>("Password:").Secret());
-            loggedInUser = userList.FirstOrDefault(u => u.Username == name && u.Password == pass);
-            if (loggedInUser != null) { AnsiConsole.MarkupLine("[bold green]✔ Access Granted![/]"); Thread.Sleep(1000); }
-            else { AnsiConsole.MarkupLine("[bold red]❌ Invalid Login![/]"); Thread.Sleep(2000); }
+
+            loggedInUser = userList.FirstOrDefault(u => u.Username.Equals(name, StringComparison.OrdinalIgnoreCase) && u.Password == pass);
+
+            if (loggedInUser != null)
+            {
+                AnsiConsole.MarkupLine("[bold green]✔ Access Granted![/]");
+                DataManager.SaveLog("LOGIN", $"User {name} logged into the system.");
+                Thread.Sleep(1000);
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[bold red]❌ Invalid Login![/]");
+                Thread.Sleep(2000);
+            }
         }
         else if (choice == "Register")
         {
             var name = AnsiConsole.Ask<string>("New Username:");
             var pass = AnsiConsole.Prompt(new TextPrompt<string>("New Password:").Secret());
             var role = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Role:").AddChoices("Admin", "User"));
+
             DataManager.RegisterUser(new User { Username = name, Password = pass, Role = role });
-            AnsiConsole.MarkupLine("[bold green]✔ Registered![/]"); Thread.Sleep(1000);
+            DataManager.SaveLog("REGISTRATION", $"New user '{name}' registered as {role}.");
+
+            AnsiConsole.MarkupLine("[bold green]✔ Registered Successfully! You can now login.[/]");
+            Thread.Sleep(1500);
         }
         else if (choice == "About System")
         {
-            // Developed by Nafeesa Haroon (KICSIT reference kept in credits)
-            AnsiConsole.MarkupLine("[cyan]Developed by Nafeesa Haroon\nInstitute of Space Technology[/]");
+            AnsiConsole.Write(new FigletText("LMS").Color(Color.Cyan));
+            AnsiConsole.MarkupLine("[cyan]Developed by Nafeesa Haroon\nKICSIT - BSCS 5th Semester[/]");
+            AnsiConsole.MarkupLine("\n[grey]Press any key to go back...[/]");
             Console.ReadKey();
         }
         else break;
     }
     else
     {
-        AnsiConsole.Write(new Panel(new Markup($"[bold white]USER:[/] [cyan]{loggedInUser.Username.ToUpper()}[/] | [bold white]ROLE:[/] [yellow]{loggedInUser.Role}[/]")).BorderColor(Color.Grey));
+        // USER INFO BAR
+        AnsiConsole.Write(new Panel(new Markup($"[bold white]USER:[/] [cyan]{loggedInUser.Username.ToUpper()}[/] | [bold white]ROLE:[/] [yellow]{loggedInUser.Role}[/]")).BorderColor(Color.Grey));
 
-        var tb = DataManager.GetTotalBooks();
         if (loggedInUser.Role == "Admin")
         {
-            var tu = DataManager.GetTotalUsers();
             AnsiConsole.Write(new Columns(
-                new Panel(Align.Center(new Markup($"[bold yellow]{tb}[/]\n[grey]TOTAL COPIES[/]"))).Header(new PanelHeader("Inventory")).BorderColor(Color.Green),
-                new Panel(Align.Center(new Markup($"[bold yellow]{tu}[/]\n[grey]USERS[/]"))).Header(new PanelHeader("Community")).BorderColor(Color.Cyan)
+              new Panel(Align.Center(new Markup($"[bold yellow]{DataManager.GetTotalBooks()}[/]\n[grey]TOTAL COPIES[/]"))).Header(new PanelHeader("Inventory")).BorderColor(Color.Green),
+              new Panel(Align.Center(new Markup($"[bold yellow]{DataManager.GetTotalUsers()}[/]\n[grey]USERS[/]"))).Header(new PanelHeader("Community")).BorderColor(Color.Cyan)
             ));
         }
-        else
-        {
-            AnsiConsole.Write(new Panel(new Markup($"[bold green]WELCOME, {loggedInUser.Username.ToUpper()}![/] Currently, we have [yellow]{tb}[/] books.")).BorderColor(Color.Blue));
-        }
 
-        // --- UPDATED MENU ARRANGEMENT ---
         var menuChoices = new List<string> { "View All Books", "Search Book" };
-
         if (loggedInUser.Role == "Admin")
         {
-            menuChoices.Add("Add Book");
-            menuChoices.Add("Update Book");
-            menuChoices.Add("Delete Book");
-            menuChoices.Add("View Transaction History");
+            menuChoices.AddRange(new[] { "Add Book", "Update Book", "Delete Book", "Restore Center", "View Transaction History", "View Activity Logs" });
         }
+        menuChoices.AddRange(new[] { "Issue a Book", "Return a Book", "Logout" });
 
-        menuChoices.Add("Issue a Book");
-        menuChoices.Add("Return a Book");
-        menuChoices.Add("Logout");
+        var action = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Actions:").PageSize(12).AddChoices(menuChoices));
 
-        var action = AnsiConsole.Prompt(new SelectionPrompt<string>()
-            .Title("Actions:")
-            .PageSize(10)
-            .AddChoices(menuChoices));
+        if (action == "Logout") { loggedInUser = null; }
 
-        if (action == "Logout") loggedInUser = null;
         else if (action == "View All Books") ShowBooksTable(DataManager.LoadBooks());
+
         else if (action == "Search Book")
         {
-            var k = AnsiConsole.Ask<string>("Search Title or Author:");
+            var k = AnsiConsole.Ask<string>("Enter Title, Author or Category:");
             ShowBooksTable(DataManager.SearchBooks(k));
         }
+
         else if (action == "Add Book" && loggedInUser.Role == "Admin")
         {
-            var t = AnsiConsole.Ask<string>("Title:");
-            var a = AnsiConsole.Ask<string>("Author:");
-            var q = AnsiConsole.Ask<int>("Quantity:");
-            var p = AnsiConsole.Ask<int>("Price:");
-            DataManager.AddBookToDb(new Book { Title = t, Author = a, Quantity = q, Price = p });
-            AnsiConsole.MarkupLine("[bold green]✔ Added![/]"); Thread.Sleep(1000);
+            var book = new Book
+            {
+                Title = AnsiConsole.Ask<string>("Title:"),
+                Author = AnsiConsole.Ask<string>("Author:"),
+                ISBN = AnsiConsole.Ask<string>("ISBN:"),
+                Category = AnsiConsole.Ask<string>("Category:"),
+                Quantity = AnsiConsole.Ask<int>("Quantity:"),
+                Price = AnsiConsole.Ask<int>("Price:")
+            };
+            DataManager.AddBookToDb(book);
+            DataManager.SaveLog("ADD_BOOK", $"Admin added '{book.Title}' to inventory.");
+            AnsiConsole.MarkupLine("[bold green]✔ Book Added Successfully![/]");
+            Thread.Sleep(1000);
         }
+
         else if (action == "Update Book" && loggedInUser.Role == "Admin")
         {
-            var id = AnsiConsole.Ask<int>("Enter Book ID to update:");
-            var col = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Field:").AddChoices("book_name", "author", "quantity", "price"));
-            var val = AnsiConsole.Ask<string>($"New value for {col}:");
-            DataManager.UpdateBookField(id, col, val);
-            AnsiConsole.MarkupLine("[bold green]✔ Updated![/]"); Thread.Sleep(1000);
+            var id = AnsiConsole.Ask<int>("Book ID to Update:");
+            var col = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Field:").AddChoices("book_name", "author", "quantity", "price", "category", "isbn"));
+            var newVal = AnsiConsole.Ask<string>("New Value:");
+            DataManager.UpdateBookField(id, col, newVal);
+            DataManager.SaveLog("UPDATE", $"Book ID {id} updated: {col} changed to {newVal}");
+            AnsiConsole.MarkupLine("[bold blue]✔ Update Successful![/]");
+            Thread.Sleep(1000);
         }
+
         else if (action == "Delete Book" && loggedInUser.Role == "Admin")
         {
-            var id = AnsiConsole.Ask<int>("ID to delete:");
+            int id = AnsiConsole.Ask<int>("ID to Delete:");
             DataManager.DeleteBookFromDb(id);
-            AnsiConsole.MarkupLine("[bold red]✔ Deleted![/]"); Thread.Sleep(1000);
+            DataManager.SaveLog("DELETE_SOFT", $"Book ID {id} moved to Recycle Bin.");
+            AnsiConsole.Write(new Panel(new Markup("[bold red]⚠ SYSTEM NOTICE:[/] Book moved to Recycle Bin")).BorderColor(Color.Red));
+            Thread.Sleep(1500);
         }
+
+        else if (action == "Restore Center" && loggedInUser.Role == "Admin")
+        {
+            var deleted = DataManager.GetDeletedBooks();
+            if (deleted.Count == 0) { AnsiConsole.MarkupLine("[grey]Recycle Bin is empty.[/]"); Thread.Sleep(1000); continue; }
+
+            var res = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Select Book:").AddChoices(deleted.Select(b => $"{b.Id}: {b.Title}").Append("Back")));
+
+            if (res != "Back")
+            {
+                int id = int.Parse(res.Split(':')[0]);
+                var subAction = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Action:").AddChoices("Restore", "Hard Delete", "Cancel"));
+
+                if (subAction == "Restore")
+                {
+                    DataManager.RestoreBook(id);
+                    DataManager.SaveLog("RESTORE", $"Book ID {id} restored to library.");
+                    AnsiConsole.MarkupLine("[bold green]✔ Restored![/]");
+                }
+                else if (subAction == "Hard Delete")
+                {
+                    DataManager.HardDeleteBook(id);
+                    DataManager.SaveLog("DELETE_HARD", $"Book ID {id} permanently deleted.");
+                    AnsiConsole.MarkupLine("[bold red]✔ Permanently Deleted![/]");
+                }
+            }
+            Thread.Sleep(1500);
+        }
+
         else if (action == "Issue a Book")
         {
-            var id = AnsiConsole.Ask<int>("[yellow]Enter Book ID to Issue:[/]");
-            bool success = DataManager.UpdateBookQuantity(id, -1);
-            if (success)
+            var id = AnsiConsole.Ask<int>("Book ID:");
+            string target = (loggedInUser.Role == "Admin") ? AnsiConsole.Ask<string>("Issue to (Username):") : loggedInUser.Username;
+
+            if (DataManager.UpdateBookQuantity(id, -1))
             {
-                DataManager.RecordTransaction(loggedInUser.Username, id, "Issue");
-                AnsiConsole.Write(new Panel(new Markup("[bold green]✔ ISSUED SUCCESSFULLY![/]\n[white]Return within 7 days to avoid Rs. 100/day fine.[/]")).BorderColor(Color.Green));
+                DataManager.RecordTransaction(target, id, "Issue");
+                DataManager.SaveLog("ISSUE", $"Book ID {id} issued to {target}");
+                AnsiConsole.MarkupLine("[bold green]✔ Book Issued Successfully![/]");
             }
-            else AnsiConsole.MarkupLine("[bold red]❌ Out of Stock![/]");
-            Thread.Sleep(2000);
+            else AnsiConsole.MarkupLine("[bold red]❌ Error: Out of Stock![/]");
+            Thread.Sleep(1500);
         }
+
         else if (action == "Return a Book")
         {
-            var id = AnsiConsole.Ask<int>("[yellow]Enter Book ID to Return:[/]");
-            DataTable dt = DataManager.GetTransactionHistory();
-            DataRow? transaction = dt.AsEnumerable()
-                .FirstOrDefault(r => r.Field<string>("username") == loggedInUser.Username
-                                && r.Field<int>("book_id") == id
-                                && r.Field<string>("status") == "Issued");
+            var id = AnsiConsole.Ask<int>("Book ID:");
+            string target = (loggedInUser.Role == "Admin") ? AnsiConsole.Ask<string>("Return for (Username):") : loggedInUser.Username;
 
-            if (transaction != null)
+            DataManager.UpdateBookQuantity(id, 1);
+            int fine = DataManager.RecordTransaction(target, id, "Return");
+            DataManager.SaveLog("RETURN", $"Book ID {id} returned by {target}. Fine: {fine}");
+
+            if (fine > 0)
             {
-                DateTime issueDate = Convert.ToDateTime(transaction["issue_date"]);
-                DateTime returnDate = DateTime.Now;
-                int daysDiff = (returnDate - issueDate).Days;
-                int fine = (daysDiff > 7) ? (daysDiff - 7) * 100 : 0;
-
-                DataManager.UpdateBookQuantity(id, 1);
-                DataManager.RecordTransaction(loggedInUser.Username, id, "Return");
-
-                var summaryTable = new Table().Border(TableBorder.Rounded).BorderColor(Color.Cyan1);
-                summaryTable.AddColumn("[bold yellow]Detail[/]");
-                summaryTable.AddColumn("[bold yellow]Value[/]");
-                summaryTable.AddRow("Days Kept", daysDiff.ToString());
-                summaryTable.AddRow("Status", daysDiff > 7 ? "[red]LATE[/]" : "[green]ON TIME[/]");
-                summaryTable.AddRow("Fine (Rs. 100/day)", fine > 0 ? $"[bold red]Rs. {fine}[/]" : "[bold green]Rs. 0[/]");
-
-                AnsiConsole.Write(new Panel(summaryTable).Header("📊 RETURN SUMMARY").BorderColor(Color.Cyan1));
-                AnsiConsole.MarkupLine("\n[grey]Press any key...[/]"); Console.ReadKey();
+                AnsiConsole.Write(new Panel(new Markup($"[bold white on red] ⚠ LATE RETURN! FINE: {fine} PKR [/]")).BorderColor(Color.Red));
+                DataManager.SaveLog("FINE_GEN", $"Fine of {fine} PKR generated for {target}");
             }
-            else { AnsiConsole.MarkupLine("[bold red]❌ No active issuance found![/]"); Thread.Sleep(2000); }
+            else
+            {
+                AnsiConsole.MarkupLine("[bold green]✔ Book Returned Successfully![/]");
+            }
+            Thread.Sleep(2000);
         }
+
         else if (action == "View Transaction History" && loggedInUser.Role == "Admin")
         {
-            DataTable history = DataManager.GetTransactionHistory();
-            var table = new Table().BorderColor(Color.Magenta1).Title("[bold yellow]📜 ISSUANCE LOGS[/]");
+            var table = new Table().Title("[bold yellow]📜 TRANSACTION RECORDS[/]").BorderColor(Color.Grey);
             table.AddColumns("User", "Book ID", "Issue Date", "Return Date", "Status");
-            foreach (DataRow row in history.Rows)
-                table.AddRow(row["username"].ToString(), row["book_id"].ToString(), row["issue_date"].ToString(), row["return_date"]?.ToString() ?? "-", row["status"].ToString());
 
+            foreach (DataRow r in DataManager.GetTransactionHistory().Rows)
+            {
+                string status = r["status"].ToString() ?? "-";
+                string color = status == "Issued" ? "yellow" : "green";
+                table.AddRow(r[0].ToString(), r[1].ToString(), r[2].ToString(), r[3].ToString(), $"[{color}]{status}[/]");
+            }
             AnsiConsole.Write(table);
-            AnsiConsole.MarkupLine("\n[grey]Press any key...[/]"); Console.ReadKey();
+            AnsiConsole.MarkupLine("[grey]Press any key to go back...[/]");
+            Console.ReadKey();
+        }
+
+        else if (action == "View Activity Logs" && loggedInUser.Role == "Admin")
+        {
+            var table = new Table().Title("[bold cyan]⚙ SYSTEM ACTIVITY LOGS[/]").BorderColor(Color.DeepSkyBlue1);
+            table.AddColumns("Action", "Details", "Timestamp");
+
+            foreach (DataRow r in DataManager.GetLogs().Rows)
+            {
+                string type = r["action_type"].ToString();
+                string color = type.Contains("DELETE") ? "red" : (type.Contains("ADD") ? "green" : "white");
+                table.AddRow($"[{color}]{type}[/]", r["details"].ToString(), r["log_date"].ToString());
+            }
+            AnsiConsole.Write(table);
+            AnsiConsole.MarkupLine("[grey]Press any key to go back...[/]");
+            Console.ReadKey();
         }
     }
 }
 
+// HELPER METHOD FOR TABLE DISPLAY
 void ShowBooksTable(List<Book> books)
 {
-    var table = new Table().Border(TableBorder.Rounded).BorderColor(Color.DeepSkyBlue1).Title("[bold yellow]📚 LIBRARY COLLECTION[/]");
-    table.AddColumns("[bold yellow]ID[/]", "[bold yellow]Title[/]", "[bold yellow]Author[/]", "[bold yellow]Price[/]", "[bold yellow]Status[/]");
+    var table = new Table().BorderColor(Color.DeepSkyBlue1).Title("[bold blue]📚 LIBRARY INVENTORY[/]");
+    table.AddColumns("ID", "Title", "Author", "Qty", "Price");
+    if (books.Count == 0) table.AddRow("[grey]No books found[/]", "-", "-", "-", "-");
     foreach (var b in books)
     {
-        string statusText = b.Quantity > 0 ? $"[green]Available ({b.Quantity})[/]" : "[red]Out of Stock[/]";
-        table.AddRow(b.Id.ToString(), b.Title, b.Author, b.Price.ToString("N0"), statusText);
+        string qtyColor = b.Quantity > 0 ? "green" : "red";
+        table.AddRow(b.Id.ToString(), $"[cyan]{b.Title}[/]", b.Author, $"[{qtyColor}]{b.Quantity}[/]", $"[yellow]{b.Price}[/]");
     }
     AnsiConsole.Write(table);
-    AnsiConsole.MarkupLine("\n[grey]Press any key to return...[/]"); Console.ReadKey();
+    AnsiConsole.MarkupLine("\n[grey]Press any key to return...[/]");
+    Console.ReadKey();
 }
